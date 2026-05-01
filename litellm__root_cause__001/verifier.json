@@ -1,0 +1,163 @@
+{
+  "task_id": "litellm__root_cause__001",
+  "weights": {
+    "answer": 0.50,
+    "grounding": 0.35,
+    "distractor_penalty": 0.15
+  },
+  "extraction_schema": null,
+  "grading_rubric": [
+    {
+      "id": "GR1",
+      "criterion": "Explains that wildcard-backed requests are resolved through get_model_list plus PatternMatchRouter, and that wildcard matches are rewritten to participate under the requested model name.",
+      "verifier_type": "keyword_set",
+      "expected": [
+        "get_model_list",
+        "pattern_router.route",
+        "PatternMatchRouter",
+        "openai/*",
+        "openai/gpt-4.1-mini"
+      ],
+      "weight": 16
+    },
+    {
+      "id": "GR2",
+      "criterion": "Explains that the initial request only uses the minimum order because healthy deployments are filtered through _get_order_filtered_deployments when no target order is present.",
+      "verifier_type": "keyword_set",
+      "expected": [
+        "_get_order_filtered_deployments",
+        "target_order",
+        "minimum order",
+        "order"
+      ],
+      "weight": 14
+    },
+    {
+      "id": "GR3",
+      "criterion": "Explains that async_function_with_fallbacks_common_utils synthesizes higher-order retries for the same model group before external fallbacks.",
+      "verifier_type": "keyword_set",
+      "expected": [
+        "async_function_with_fallbacks_common_utils",
+        "_target_order",
+        "higher order",
+        "external fallback"
+      ],
+      "weight": 18
+    },
+    {
+      "id": "GR4",
+      "criterion": "Explains that a fallback key without the provider prefix can still match a provider-qualified requested model through stripped-model-group matching.",
+      "verifier_type": "keyword_set",
+      "expected": [
+        "get_fallback_model_group",
+        "_check_stripped_model_group",
+        "gpt-4.1-mini",
+        "openai/gpt-4.1-mini"
+      ],
+      "weight": 14
+    },
+    {
+      "id": "GR5",
+      "criterion": "Explains that external fallback deployments without an order still run because _get_order_filtered_deployments returns all healthy deployments when target_order has no match.",
+      "verifier_type": "keyword_set",
+      "expected": [
+        "_get_order_filtered_deployments",
+        "target_order",
+        "return all",
+        "external fallback"
+      ],
+      "weight": 14
+    },
+    {
+      "id": "GR6",
+      "criterion": "Explains that run_async_fallback executes the combined fallback list sequentially and re-enters router selection for synthetic order fallbacks.",
+      "verifier_type": "keyword_set",
+      "expected": [
+        "run_async_fallback",
+        "fallback_model_group",
+        "kwargs",
+        "_target_order"
+      ],
+      "weight": 10
+    },
+    {
+      "id": "GR7",
+      "criterion": "Uses the regression tests as supporting evidence for wildcard order fallback and external fallback after order exhaustion.",
+      "verifier_type": "keyword_set",
+      "expected": [
+        "test_router_order_fallback",
+        "wildcard",
+        "order",
+        "fallback"
+      ],
+      "weight": 6
+    },
+    {
+      "id": "GR8",
+      "criterion": "Concludes that LiteLLM intentionally combines wildcard resolution, minimum-order first routing, higher-order intra-group retries, and only then external fallback handling.",
+      "verifier_type": "llm_judge",
+      "expected": "The answer clearly concludes that LiteLLM first resolves wildcard-backed requests into a logical model group, first tries the lowest order within that group, then synthesizes higher-order retries for the same group, and only after that uses external fallback matching and execution.",
+      "context": "Pass if the answer clearly states all of the following: wildcard or pattern-based resolution feeds the candidate set, the first pass uses the minimum order, higher order levels are retried before external fallbacks, and the overall behavior is intentional rather than accidental. Accept reasonable paraphrases.",
+      "weight": 8
+    }
+  ],
+  "groundings": [
+    {
+      "id": "G1",
+      "filename": "litellm/router.py",
+      "line_ranges": [[8840, 8880]],
+      "inference": "get_model_list resolves direct matches, aliases, and wildcard pattern matches, and rewrites wildcard matches so they participate under the requested model name.",
+      "rubric_ids": ["GR1", "GR8"],
+      "weight": 15
+    },
+    {
+      "id": "G2",
+      "filename": "litellm/utils.py",
+      "line_ranges": [[4908, 4937]],
+      "inference": "_get_order_filtered_deployments logic covering initial order filtering and target_order fallback.",
+      "rubric_ids": ["GR2", "GR5"],
+      "weight": 18
+    },
+    {
+      "id": "G3",
+      "filename": "litellm/router.py",
+      "line_ranges": [[5334, 5591]],
+      "inference": "async_function_with_fallbacks_common_utils builds higher-order synthetic fallbacks.",
+      "rubric_ids": ["GR3", "GR8"],
+      "weight": 18
+    },
+    {
+      "id": "G4",
+      "filename": "litellm/router_utils/fallback_event_handlers.py",
+      "line_ranges": [
+        [20, 42],
+        [45, 82],
+        [85, 161]
+      ],
+      "inference": "Fallback matching supports exact model-group keys and stripped-provider matches, and run_async_fallback executes them.",
+      "rubric_ids": ["GR4", "GR6"],
+      "weight": 18
+    },
+    {
+      "id": "G5",
+      "filename": "litellm/router_utils/pattern_match_deployments.py",
+      "line_ranges": [[52, 257]],
+      "inference": "PatternMatchRouter matches incoming requests and rewrites the underlying deployment model.",
+      "rubric_ids": ["GR1"],
+      "weight": 15
+    },
+    {
+      "id": "G6",
+      "filename": "tests/test_litellm/test_router_order_fallback.py",
+      "line_ranges": [
+        [123, 156],
+        [160, 192],
+        [242, 278],
+        [335, 367]
+      ],
+      "inference": "The regression tests explicitly cover initial minimum-order selection, fallback to higher order on failure, external fallback after order exhaustion, and wildcard model groups advancing across order levels.",
+      "rubric_ids": ["GR7", "GR8"],
+      "weight": 16
+    }
+  ]
+}

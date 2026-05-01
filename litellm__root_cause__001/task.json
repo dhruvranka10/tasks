@@ -1,0 +1,23 @@
+{
+    "task_id": "litellm__root_cause__001",
+    "prompt": "I'm debugging a LiteLLM router configuration where the incoming request model is `openai/gpt-4.1-mini`, but the router is configured with wildcard deployments like `openai/*`. There are two matching wildcard deployments for that route: one with `order: 1` and one with `order: 2`. There is also an external fallback configured for the same logical model group.\n\nObserved behavior:\n- The initial request only tries the `order: 1` deployment.\n- If that deployment fails, LiteLLM retries the same logical model group at `order: 2` before attempting the external fallback.\n- This still works for wildcard routes such as `openai/*`.\n- A fallback key like `gpt-4.1-mini` can still match a requested model like `openai/gpt-4.1-mini`.\n- When the external fallback deployment has no `order`, it still runs instead of being filtered out by the router's `_target_order` mechanism.\n\nTrace the code and explain precisely why LiteLLM behaves this way. I need a code-grounded explanation of how wildcard model resolution, order filtering, order-based fallback construction, fallback-key matching, and fallback execution fit together.\n\nOrganize the answer into five labeled sections:\n1. Wildcard Model Resolution\n2. Initial Order Filtering\n3. Order-Based Fallback Construction\n4. External Fallback Matching and Execution\n5. Final Conclusion\n\nBe explicit about the roles of `get_model_list`, `PatternMatchRouter`, `_get_order_filtered_deployments`, `async_function_with_fallbacks_common_utils`, `get_fallback_model_group`, and `run_async_fallback`.",
+    "execution_environment": {
+      "image": "python:3.11-slim",
+      "repo_url": "https://github.com/BerriAI/litellm",
+      "repo_commit": "9397409c5b9b9feeb34d38a872762ad537e12e68"
+    },
+    "task_type": "root_cause",
+    "difficulty": "hard",
+    "max_steps": 24,
+    "metadata": {
+      "priority_tools": ["read_file", "bash", "write_todos", "save_grounding"],
+      "expected_turns": 15,
+      "language": "python"
+    },
+    "distractor_tools": [
+      "web_search",
+      "install_dependencies",
+      "run_tests",
+      "execute_code"
+    ]
+  }
