@@ -1,6 +1,6 @@
 {
   "task_id": "litellm__root_cause__001",
-  "answer": "Wildcard Model Resolution: LiteLLM does not require the request model to exactly match a concrete deployment name before it can participate in routing or fallback. In `router.py`, `get_model_list()` first tries direct deployment lookup, then alias lookup, and if that returns nothing it asks `self.pattern_router.route(model_name)` for wildcard matches. For wildcard matches, it rewrites each matched deployment so its `model_name` becomes the requested model name before returning it. In `pattern_match_deployments.py`, `PatternMatchRouter.route()` finds the wildcard regex match and `_return_pattern_matched_deployments()` deep-copies the matching deployment while rewriting `litellm_params[\"model\"]` via `set_deployment_model_name()`. That is why a request for `openai/gpt-4.1-mini` can be treated as belonging to the same logical model group as wildcard deployments configured under `openai/*`.\n\nInitial Order Filtering: On the first selection pass, LiteLLM filters healthy deployments down to the minimum order. In `utils.py`, `_get_order_filtered_deployments()` returns only the deployments at the smallest order value unless a specific `target_order` is supplied. In `router.py`, the healthy deployment list is passed through `_get_order_filtered_deployments(..., target_order=_target_order)` before a deployment is chosen. Since the first request has no `_target_order`, LiteLLM keeps only the `order: 1` wildcard deployments and does not consider `order: 2` yet. That is why the initial call only hits the lowest-order deployment set.\n\nOrder-Based Fallback Construction: When that first attempt fails, `async_function_with_fallbacks_common_utils()` in `router.py` builds an internal fallback plan before consulting external fallbacks. It loads all deployments for the original model group using `get_model_list(model_name=original_model_group, team_id=_request_team_id)`, collects all distinct order values, and constructs synthetic fallback entries like `{ \"model\": original_model_group, \"_target_order\": o }` for every higher order than the current one. The comment explicitly says this is for order-based fallbacks and that it should also work for wildcard-routed model groups such as `openai/* -> openai/gpt-4.1-mini`. Then it prepends these order-based entries ahead of any external fallback list. So the router intentionally escalates from `order: 1` to `order: 2` inside the same logical model group before trying a different fallback model group.\n\nExternal Fallback Matching and Execution: External fallback matching happens in `fallback_event_handlers.py`. `get_fallback_model_group()` checks three cases in order: exact model-group match, stripped-provider match, and generic `*` fallback. The helper `_check_stripped_model_group()` removes a provider prefix like `openai/` before comparing the requested model group to the fallback key, so a configured key like `gpt-4.1-mini` can still match an incoming `openai/gpt-4.1-mini`. After the combined fallback list is built, `run_async_fallback()` iterates through it. For synthetic order fallbacks it updates kwargs with the same model plus `_target_order`, which sends the next retry back through normal router selection but constrained to that order level. For external fallbacks without an `order`, `_get_order_filtered_deployments()` has a special case: if `target_order` is provided and no deployment matches that order, it returns all healthy deployments instead of filtering them out. The inline comment even calls out this scenario as an example of an external fallback model. That is why the external fallback still runs even though the fallback chain was carrying `_target_order` from the earlier order-based retry.\n\nFinal Conclusion: LiteLLM is combining two mechanisms rather than using one flat fallback list. First, wildcard routing normalizes `openai/gpt-4.1-mini` onto the logical wildcard-backed model group by resolving pattern matches into concrete deployment candidates. Second, order filtering ensures the first call only uses the lowest order. Third, on failure, the router synthesizes higher-order retries within that same model group and prepends them ahead of external fallbacks. Fourth, external fallbacks still match provider-prefixed requests because fallback matching can strip the provider prefix, and they still execute because `_get_order_filtered_deployments()` deliberately returns all deployments when a carried `_target_order` does not exist on the external fallback target. So the observed behavior is intentional: wildcard resolution establishes the candidate set, order values define intra-group escalation, and external fallback logic only runs after those higher-order attempts are exhausted. The regression tests (like test_router_order_fallback) explicitly cover this behavior.",
+  "answer": "Wildcard Model Resolution: LiteLLM does not require the request model to exactly match a concrete deployment name before it can participate in routing or fallback. In `router.py`, `get_model_list()` first tries direct deployment lookup, then alias lookup, and if that returns nothing it asks `self.pattern_router.route(model_name)` for wildcard matches. For wildcard matches, it rewrites each matched deployment so its `model_name` becomes the requested model name before returning it. In `pattern_match_deployments.py`, `PatternMatchRouter.route()` finds the wildcard regex match and `_return_pattern_matched_deployments()` deep-copies the matching deployment while rewriting `litellm_params[\"model\"]` via `set_deployment_model_name()`. That is why a request for `openai/gpt-4.1-mini` can be treated as belonging to the same logical model group as wildcard deployments configured under `openai/*`.\n\nInitial Order Filtering: On the first selection pass, LiteLLM filters healthy deployments down to the minimum order. In `utils.py`, `_get_order_filtered_deployments()` returns only the deployments at the smallest order value unless a specific `target_order` is supplied. In `router.py`, the healthy deployment list is passed through `_get_order_filtered_deployments(..., target_order=_target_order)` before a deployment is chosen. Since the first request has no `_target_order`, LiteLLM keeps only the `order: 1` wildcard deployments and does not consider `order: 2` yet. That is why the initial call only hits the lowest-order deployment set.\n\nOrder-Based Fallback Construction: When that first attempt fails, `async_function_with_fallbacks_common_utils()` in `router.py` builds an internal fallback plan before consulting external fallbacks. It loads all deployments for the original model group using `get_model_list(model_name=original_model_group, team_id=_request_team_id)`, collects all distinct order values, and constructs synthetic fallback entries like `{ \"model\": original_model_group, \"_target_order\": o }` for every higher order than the current one. The comment explicitly says this is for order-based fallbacks and that it should also work for wildcard-routed model groups such as `openai/* -> openai/gpt-4.1-mini`. Then it prepends these order-based entries ahead of any external fallback list. So the router intentionally escalates from `order: 1` to `order: 2` inside the same logical model group before trying a different fallback model group.\n\nExternal Fallback Matching and Execution: External fallback matching happens in `fallback_event_handlers.py`. `get_fallback_model_group()` checks three cases in order: exact model-group match, stripped-provider match, and generic `*` fallback. The helper `_check_stripped_model_group()` removes a provider prefix like `openai/` before comparing the requested model group to the fallback key, so a configured key like `gpt-4.1-mini` can still match an incoming `openai/gpt-4.1-mini`. After the combined fallback list is built, `run_async_fallback()` iterates through it. For synthetic order fallbacks it updates kwargs with the same model plus `_target_order`, which sends the next retry back through normal router selection but constrained to that order level. For external fallbacks without an `order`, `_get_order_filtered_deployments()` has a special case: if `target_order` is provided and no deployment matches that order, it will return all healthy deployments instead of filtering them out. The inline comment even calls out this scenario as an example of an external fallback model. That is why the external fallback still runs even though the fallback chain was carrying `_target_order` from the earlier order-based retry.\n\nFinal Conclusion: LiteLLM is combining two mechanisms rather than using one flat fallback list. First, wildcard routing normalizes `openai/gpt-4.1-mini` onto the logical wildcard-backed model group by resolving pattern matches into concrete deployment candidates. Second, order filtering ensures the first call only uses the lowest order. Third, on failure, the router synthesizes higher-order retries within that same model group and prepends them ahead of external fallbacks. Fourth, external fallbacks still match provider-prefixed requests because fallback matching can strip the provider prefix, and they still execute because `_get_order_filtered_deployments()` deliberately returns all deployments when a carried `_target_order` does not exist on the external fallback target. So the observed behavior is intentional: wildcard resolution establishes the candidate set, order values define intra-group escalation, and external fallback logic only runs after those higher-order attempts are exhausted. The regression tests (like test_router_order_fallback) explicitly cover this behavior.",
   "cot": [
     {
       "type": "thinking",
@@ -19,7 +19,9 @@
       "tool": "save_grounding",
       "arguments": {
         "filename": "litellm/router.py",
-        "line_ranges": [[8840, 8880]],
+        "line_ranges": [
+          [8840, 8880]
+        ],
         "inference": "get_model_list resolves direct matches, aliases, and wildcard pattern matches, and rewrites wildcard matches so they participate under the requested model name."
       },
       "output": "saved grounding for wildcard-aware model lookup"
@@ -29,7 +31,9 @@
       "tool": "save_grounding",
       "arguments": {
         "filename": "litellm/utils.py",
-        "line_ranges": [[4908, 4937]],
+        "line_ranges": [
+          [4908, 4937]
+        ],
         "inference": "_get_order_filtered_deployments logic covering initial order filtering and target_order fallback."
       },
       "output": "saved grounding for order filtering"
@@ -39,7 +43,9 @@
       "tool": "save_grounding",
       "arguments": {
         "filename": "litellm/router.py",
-        "line_ranges": [[5334, 5591]],
+        "line_ranges": [
+          [5334, 5591]
+        ],
         "inference": "async_function_with_fallbacks_common_utils builds higher-order synthetic fallbacks."
       },
       "output": "saved grounding for order-based fallback construction"
@@ -49,7 +55,11 @@
       "tool": "save_grounding",
       "arguments": {
         "filename": "litellm/router_utils/fallback_event_handlers.py",
-        "line_ranges": [[20, 42], [45, 82], [85, 161]],
+        "line_ranges": [
+          [20, 42],
+          [45, 82],
+          [85, 161]
+        ],
         "inference": "Fallback matching supports exact model-group keys and stripped-provider matches, and run_async_fallback executes them."
       },
       "output": "saved grounding for fallback matching and execution"
@@ -59,7 +69,9 @@
       "tool": "save_grounding",
       "arguments": {
         "filename": "litellm/router_utils/pattern_match_deployments.py",
-        "line_ranges": [[52, 257]],
+        "line_ranges": [
+          [52, 257]
+        ],
         "inference": "PatternMatchRouter matches incoming requests and rewrites the underlying deployment model."
       },
       "output": "saved grounding for wildcard request normalization"
@@ -77,7 +89,12 @@
       "tool": "save_grounding",
       "arguments": {
         "filename": "tests/test_litellm/test_router_order_fallback.py",
-        "line_ranges": [[123, 156], [160, 192], [242, 278], [335, 367]],
+        "line_ranges": [
+          [123, 156],
+          [160, 192],
+          [242, 278],
+          [335, 367]
+        ],
         "inference": "The regression tests explicitly cover initial minimum-order selection, fallback to higher order on failure, external fallback after order exhaustion, and wildcard model groups advancing across order levels."
       },
       "output": "saved grounding for tested behavior"
@@ -90,17 +107,23 @@
   "groundings": [
     {
       "filename": "litellm/router.py",
-      "line_ranges": [[8840, 8880]],
+      "line_ranges": [
+        [8840, 8880]
+      ],
       "inference": "get_model_list resolves direct matches, aliases, and wildcard pattern matches, and rewrites wildcard matches so they participate under the requested model name."
     },
     {
       "filename": "litellm/utils.py",
-      "line_ranges": [[4908, 4937]],
+      "line_ranges": [
+        [4908, 4937]
+      ],
       "inference": "_get_order_filtered_deployments logic covering initial order filtering and target_order fallback."
     },
     {
       "filename": "litellm/router.py",
-      "line_ranges": [[5334, 5591]],
+      "line_ranges": [
+        [5334, 5591]
+      ],
       "inference": "async_function_with_fallbacks_common_utils builds higher-order synthetic fallbacks."
     },
     {
@@ -114,7 +137,9 @@
     },
     {
       "filename": "litellm/router_utils/pattern_match_deployments.py",
-      "line_ranges": [[52, 257]],
+      "line_ranges": [
+        [52, 257]
+      ],
       "inference": "PatternMatchRouter matches incoming requests and rewrites the underlying deployment model."
     },
     {
