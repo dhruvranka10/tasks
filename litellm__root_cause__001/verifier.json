@@ -63,7 +63,7 @@
       "expected": [
         "_get_order_filtered_deployments",
         "target_order",
-        "return all",
+        "returns all",
         "external fallback"
       ],
       "weight": 14
